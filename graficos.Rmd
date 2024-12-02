@@ -1,0 +1,168 @@
+---
+title: "Gráfico Hemiciclo y Pastel: Cámara de Senadores (2024-2030)"
+author: "Alfredo Aro Terleira"
+output: html_document
+---
+
+## Paso 1: Importamos base de datos
+
+```{r}
+library(rio)
+s_2024 = import("senado_2024.xlsx")
+```
+
+# Gráfico 1: Hemiciclo
+
+```{r}
+library(tidyverse)
+library(forcats)
+library(ggparliament)
+library(ggplot2)
+library(dplyr)
+library(magrittr)
+
+# Usamos la columna 'PARTIDO' para crear la columna de agrupación de partidos
+s_2024 %>%
+  mutate(party_groups = PARTIDO) -> mi_data_lump_count  
+
+# Contamos la cantidad de diputados por partido
+mi_data_lump_count %>%
+  group_by(party_groups) %>%
+  summarise(n = sum(SENADORES)) %>%  
+  arrange(desc(n)) -> mi_data_count
+
+# Asignamos colores a los partidos
+mi_data_count %<>%
+  mutate(party_color = case_when(
+    party_groups == "MORENA" ~ "#9E1B32",
+    party_groups == "PAN" ~ "#1E88E5",
+    party_groups == "PRI" ~ "#004D2C",
+    party_groups == "SP" ~ "#757575",
+    party_groups == "PT" ~ "#D32F2F",
+    party_groups == "MC" ~ "#FF9800",
+    party_groups == "PV" ~ "#4CAF50",
+  ))
+
+# Creamos una nueva columna para la leyenda con los nombres de los partidos y los diputados entre paréntesis
+mi_data_count <- mi_data_count %>%
+  mutate(legend_label = paste(party_groups, "(", n, " senadores)", sep = ""))
+
+# Preparar los datos para el gráfico (escalado para gráfico semicircular)
+mi_data_coord <- parliament_data(
+  election_data = mi_data_count,
+  type = "semicircle",
+  parl_rows = 6,  # Número de escaños por columna
+  party_seats = mi_data_count$n
+)
+
+# Crear el gráfico
+mi_data_plot <- mi_data_coord %>%
+  ggplot(aes(x = x, y = y, colour = party_groups)) +
+  geom_parliament_seats(size = 4) +  # Tamaño de las bolas
+  ggtitle("Cámara de Senadores México (2024-2030)") +
+  coord_fixed() +  # Mantener la proporción correcta
+  theme_void() +   # Eliminamos ejes, texto y fondos no deseados
+  theme(
+    text = element_text(size = 11), # Ajustar tamaño del texto
+    legend.title = element_blank(),
+    plot.title = element_text(hjust = 0.3, size = 20), # Centrar título
+    plot.margin = margin(1, 1, 1, 1, "cm") # Márgenes
+  ) +
+  scale_colour_manual(
+    values = mi_data_count$party_color,
+    limits = mi_data_count$party_groups,
+    labels = mi_data_count$legend_label  # Aquí agregamos los nombres de los partidos con la cantidad de diputados
+  ) +
+  guides(colour = guide_legend(title = "Partidos"))  # Título de la leyenda
+
+print(mi_data_plot)
+```
+
+```{r}
+#lo guardamos
+
+ggsave("hemiciclo_senadores_2024.png", plot = mi_data_plot, width = 10, height = 7, dpi = 300)
+```
+
+# Gráfico 2: Porcentaje de mujeres y hombres en toda la Cámara de Senadores
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Calculamos el total de mujeres y hombres
+total_mujeres = sum(s_2024$MUJERES)
+total_hombres = sum(s_2024$HOMBRES)
+
+# Creamos un dataframe para el gráfico
+sexo_total = data.frame(
+  Sexo = c("Mujeres","Hombres"),
+  Total = c(total_mujeres, total_hombres)
+)
+
+# Calculamos el porcentaje
+sexo_total$Porcentaje = round(sexo_total$Total / sum(sexo_total$Total) * 100, 1)
+
+# Gráfico de pastel
+ggplot(sexo_total, aes(x = "", y = Total, fill = Sexo)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  theme_void() +
+  labs(title = "Distribución de Mujeres y Hombres \nen la Cámara de Senadores (2024-2030)") +
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(hjust = 0.2, size = 20, face = "bold") 
+  ) +
+  scale_fill_manual(values = c("Mujeres" = "#FF69B4", "Hombres" = "#1E88E5")) +
+  geom_text(aes(label = paste(Porcentaje, "%")), position = position_stack(vjust = 0.5))
+```
+
+```{r}
+# Guardamos el gráfico
+ggsave("pastel_senadores_2024.png", width = 8, height = 6)
+```
+
+# Gráfico 3: Porcentaje de mujeres y hombres por partido
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Creamos un dataframe para mujeres y hombres por partido
+sexo_partido = s_2024 %>%
+  select(PARTIDO, MUJERES, HOMBRES) %>%
+  gather(key = "Sexo", value = "Total", MUJERES, HOMBRES) %>%
+  group_by(PARTIDO) %>%
+  mutate(Porcentaje = Total / sum(Total) * 100) # Normalizamos a porcentajes
+
+# Gráfico de pastel por partido
+ggplot(sexo_partido, aes(x = "", y = Porcentaje, fill = Sexo)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  facet_wrap(~PARTIDO, ncol = 4) + # Distribuir gráficos por partido
+  theme_void() +
+  labs(title = "Distribución de Mujeres y Hombres por Partido (2024-2027)") +
+  theme(
+    legend.title = element_blank(),
+    strip.text = element_text(size = 9, face = "bold"),
+    plot.title = element_text(hjust = 0.3, size = 14, face = "bold") # Centrar el título
+  ) +
+  scale_fill_manual(values = c("MUJERES" = "#FF69B4", "HOMBRES" = "#1E88E5")) +
+  geom_text(aes(label = paste0(round(Porcentaje, 1), "%")), 
+            position = position_stack(vjust = 0.5), size = 3)
+```
+
+```{r}
+# Guardamos la imagen
+ggsave("pastelsenadores_2024.png", width = 8, height = 6)
+```
+
+
+
+
+
+
+
+
+
